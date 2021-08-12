@@ -10,11 +10,12 @@ open JackSharp
 open JackSharp.Ports
 open JackSharp.Processing
 
-let bufferCapacity = 1024 * 8
+let bufferCapacity = 4096 * 8
 let jackDelay = 1000
 let freq = 44100.0
 
 let waveform = Pulse (0.0, 0.5, 1.0 / 5000.0, 0.0, 0.0, 1.0 / 5000.0, 2.0 / 5000.0)
+//let waveform = Sine (0.0, 0.5, 440.0)
 
 let circuit = Circuit (VoltageSource ("V1", "0", "A", waveform), Resistor ("R1", "A", "B", 10.0), Resistor ("R2", "B", "C", 100.0), Capacitor ("C1", "C", "0", 1.0))
 
@@ -32,19 +33,23 @@ type ExportQueue(sim, quantity) =
         | Voltage port -> new RealVoltageExport (sim, port) :> RealExport
         | Current device -> new RealCurrentExport (sim, device) :> RealExport
 
-    member this.Monitor = new Object ()
+    let monitor = new Object ()
+
     member val Measured = 0 with get, set
 
     member this.Write () =
         while this.Measured >= bufferCapacity do ()
 
-        lock this.Monitor (fun () ->
+        lock monitor (fun () ->
             queue.Enqueue (float32 export.Value)
             this.Measured <- this.Measured + 1)
 
-    member this.Receive () =
+    member private this.Get () =
         this.Measured <- this.Measured - 1
         queue.Dequeue ()
+
+    member this.Receive callback =
+        lock monitor (fun () -> callback this.Get)
 
 let processFunc (queues : ExportQueue list) (chunk : ProcessBuffer) =
     let buffCount = chunk.AudioOut.Length
@@ -53,10 +58,10 @@ let processFunc (queues : ExportQueue list) (chunk : ProcessBuffer) =
     List.iteri (fun i (queue : ExportQueue) ->
         while queue.Measured < buffSize do ()
 
-        lock queue.Monitor (fun () ->
+        queue.Receive (fun recv ->
             for j in 0 .. buffSize - 1 do
                 chunk.AudioOut.[i].Audio.[j] <-
-                    queue.Receive ())) queues
+                    recv ())) queues
 
 let runJack (client : Processor) =
     async {
@@ -81,6 +86,7 @@ let main argv =
 
     use client = new Processor ("SPICE#", audioOutPorts = List.length ports)
     client.ProcessFunc <- Action<_> (processFunc queues)
+    client.Error.Add (fun ev -> printfn "%s" ev.Error)
 
     Async.Start (runJack client)
     runSpice ac queues
