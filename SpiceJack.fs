@@ -14,7 +14,7 @@ let freq = 44100.0
 
 let waveform = Sine (0.0, 0.5, 440.0)
 let circuit = Circuit (VoltageSource ("V1", "0", "in", waveform), Capacitor ("C1", "in", "out", 1.0), Resistor ("R1", "out", "0", 2.0e4))
-let ports = ["out"]
+let ports = ["in"; "out"]
 
 type ExportQueue(sim, port) =
     let queue  = new ConcurrentQueue<float32> ()
@@ -49,9 +49,7 @@ let runJack (client : Processor) =
         printfn "Jack client started"
     }
 
-let runSpice (sim : IBiasingSimulation) queues =
-    let lulz = RealVoltageExport (sim, "out")
-
+let runSpice (sim : Simulation) queues =
     sim.ExportSimulationData.Add (fun ev ->
         List.iter (fun (queue : ExportQueue) ->
             queue.Write ()) queues)
