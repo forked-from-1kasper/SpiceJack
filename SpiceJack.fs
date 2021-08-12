@@ -21,7 +21,7 @@ type Quantity =
 
 let ports = [Voltage "0"; Voltage "out"]
 
-type RealExport = Export<IBiasingSimulation, double>
+type RealExport = IExport<double>
 type ExportQueue(sim, quantity) =
     let queue = new ConcurrentQueue<float32> ()
     let export : RealExport =
