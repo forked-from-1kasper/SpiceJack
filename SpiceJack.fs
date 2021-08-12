@@ -12,13 +12,22 @@ open JackSharp.Processing
 
 let freq = 44100.0
 
-let waveform = Sine (0.0, 0.5, 440.0)
+let waveform = Pulse (0.0, 0.5, 1.0 / 5000.0, 0.0, 0.0, 1.0 / 5000.0, 2.0 / 5000.0)
 let circuit = Circuit (VoltageSource ("V1", "0", "in", waveform), Capacitor ("C1", "in", "out", 1.0), Resistor ("R1", "out", "0", 2.0e4))
-let ports = ["in"; "out"]
 
-type ExportQueue(sim, port) =
-    let queue  = new ConcurrentQueue<float32> ()
-    let export = new RealVoltageExport (sim, port)
+type Quantity =
+    | Voltage of string
+    | Current of string
+
+let ports = [Voltage "0"; Voltage "out"]
+
+type RealExport = Export<IBiasingSimulation, double>
+type ExportQueue(sim, quantity) =
+    let queue = new ConcurrentQueue<float32> ()
+    let export : RealExport =
+        match quantity with
+        | Voltage port -> new RealVoltageExport (sim, port) :> RealExport
+        | Current device -> new RealCurrentExport (sim, device) :> RealExport
 
     member val Measured = 0 with get, set
 
@@ -61,7 +70,7 @@ let runSpice (sim : Simulation) queues =
 [<EntryPoint>]
 let main argv =
     let ac = Transient ("AC", FixedEuler (StopTime = +infinity, Step = 1.0 / freq))
-    let queues = List.map (fun port -> ExportQueue (ac, port)) ports
+    let queues = List.map (fun quantity -> ExportQueue (ac, quantity)) ports
 
     use client = new Processor ("SPICE#", audioOutPorts = List.length ports)
     client.ProcessFunc <- Action<_> (processFunc queues)
