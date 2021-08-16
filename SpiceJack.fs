@@ -14,16 +14,16 @@ let bufferCapacity = 4096 * 8
 let jackDelay = 1000
 let freq = 44100.0
 
-let waveform = Pulse (0.0, 0.5, 1.0 / 5000.0, 0.0, 0.0, 1.0 / 5000.0, 2.0 / 5000.0)
-//let waveform = Sine (0.0, 0.5, 440.0)
+//let waveform = Pulse (0.0, 0.5, 1.0 / 5000.0, 0.0, 0.0, 1.0 / 5000.0, 2.0 / 5000.0)
+let waveform = Sine (0.0, 0.5, 440.0)
 
-let circuit = Circuit (VoltageSource ("V1", "0", "A", waveform), Resistor ("R1", "A", "B", 10.0), Resistor ("R2", "B", "C", 100.0), Capacitor ("C1", "C", "0", 1.0))
+let circuit = Circuit (VoltageSource ("V1", "0", "A", waveform), Capacitor ("C1", "A", "B", 1.0), VoltageSource ("I1", "B", "0", 0.0))
 
 type Quantity =
     | Voltage of string
     | Current of string
 
-let ports = [Voltage "A"; Voltage "C"]
+let ports = [Voltage "A"; Current "I1"]
 
 type RealExport = IExport<double>
 type ExportQueue(sim, quantity) =
@@ -71,13 +71,15 @@ let runJack (client : Processor) =
     }
 
 let runSpice (sim : Simulation) queues =
-    sim.ExportSimulationData.Add (fun ev ->
-        List.iter (fun (queue : ExportQueue) ->
-            queue.Write ()) queues)
+    async {
+        sim.ExportSimulationData.Add (fun ev ->
+            List.iter (fun (queue : ExportQueue) ->
+                queue.Write ()) queues)
 
-    printfn "Simulation started"
-    sim.Run circuit
-    printfn "Simulation finished"
+        printfn "Simulation started"
+        sim.Run circuit
+        printfn "Simulation finished"
+    }
 
 [<EntryPoint>]
 let main argv =
@@ -88,6 +90,8 @@ let main argv =
     client.ProcessFunc <- Action<_> (processFunc queues)
     client.Error.Add (fun ev -> printfn "%s" ev.Error)
 
-    Async.Start (runJack client)
-    runSpice ac queues
+    Async.Parallel [runJack client; runSpice ac queues]
+    |> Async.Ignore
+    |> Async.RunSynchronously
+
     0
